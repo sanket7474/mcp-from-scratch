@@ -1,0 +1,11 @@
+{
+  "name": "mcp-demo",
+  "version": "1.0.0",
+  "description": "Demo mcp app",
+  "license": "ISC",
+  "author": "",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
