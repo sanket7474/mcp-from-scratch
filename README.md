@@ -6,32 +6,9 @@ Status (current point)
 - Core files live in src/ and implement framing, dispatching, and a small JSON-RPC layer.
 - Example entry points: src/server.js and src/client.js (both currently run with `node` but earlier runs exited with code 1 — check the runtime logs when debugging).
 
-Current files
-- package.json
-- src/
-  - client.js
-  - dispatcher.js
-  - framing.js
-  - jsonrpc.js
-  - server.js
-  - session.js
-
-
 Quick start
 1. Install dependencies (if any):
 
-Status (current point)
-- Core files live in src/ and implement framing, dispatching, and a minimal JSON-RPC layer.
-
-Current files
-- package.json
-- src/
-  - client.js
-  - dispatcher.js
-  - framing.js
-  - jsonrpc.js
-  - server.js
-  - session.js
 
 File descriptions
 - `src/client.js`: Example client; establishes a transport to the server, sends requests and notifications, and prints responses. Useful as a runnable example of how the MCP client drives the protocol.
