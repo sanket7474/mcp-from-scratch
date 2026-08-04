@@ -1,67 +1,122 @@
-// server.js - a process that reads JSON-RPC from stdin and writes responses to stdout
+// server.js - MCP server with lifecycle handshake
 //
-// This is the first real server in the course. It is not yet a full MCP server
-// (that requires the lifecycle handshake from module 04), but it demonstrates
-// the complete stdio transport stack:
+// This is the first file in the course that implements real MCP behaviour.
+// It still uses the stdio transport and JSON-RPC stack from modules 02–03,
+// but now enforces the initialization sequence before handling anything else.
 //
-//   stdin bytes
-//     → framing.js (buffer → complete lines)
-//     → jsonrpc.js (decode lines → message objects)
-//     → dispatcher.js (route to handlers → produce response strings)
-//     → stdout bytes
-//
-// Run it directly with: node src/server.js
-// (You will need to type JSON lines manually and press Enter.)
-//
-// More usefully, run it via the client: node src/client.js
+// Run via the client: node src/client.js
+// Or manually:       node src/server.js
 
-import { createFramer } from './framing.js';
-import { Dispatcher } from './dispatcher.js';
+import { createFramer } from "./core/framing.js";
+import { Dispatcher } from "./core/dispatcher.js";
+import { decode, encodeError, MessageType } from "./core/jsonrpc.js";
 
-// ─── Transport wiring ─────────────────────────────────────────────────────────
+// ─── Server identity (returned in initialize) ─────────────────────────────────
 
+// server info (returned in initialize). This is a static object for now, but in a real server it could be dynamic,
+// e.g. based on package.json or runtime state.
+const SERVER_INFO = {
+  name: "mcp-demo",
+  version: "0.1.0",
+  description: "Demo MCP server from scratch",
+};
+import {
+  Session,
+  negotiateProtocolVersion,
+  PROTOCOL_VERSION,
+} from './util/session.js';
+// server capabilities (returned in initialize). This is a static object for now,
+// but in a real server it could be dynamic, e.g. based on config or runtime state.
+const SERVER_CAPABILITIES = {
+  tools: { listChanged: true },
+};
+
+// ─── Session + dispatcher ─────────────────────────────────────────────────────
+
+const session = new Session("server");
 const dispatcher = new Dispatcher();
 
-// Route dispatcher output to stdout.
-//
-// Why process.stdout.write and not console.log?
-//
-// console.log adds its own '\n'. Our encoded messages already end with '\n'
-// (see encodeRequest/encodeResponse in jsonrpc.js). Using console.log would
-// produce double newlines, which would confuse the framer on the other end.
-//
-// Also: when stdout is a pipe (as it is when spawned by client.js), Node.js
-// may buffer writes. process.stdout.write bypasses that buffer.
 dispatcher.onOutput = (line) => {
   process.stdout.write(line);
 };
 
-// Feed every complete line from stdin into the dispatcher.
-createFramer(process.stdin, (line) => {
-  dispatcher.dispatch(line);
+// ─── Lifecycle gatekeeper ─────────────────────────────────────────────────────
+//
+// The dispatcher knows nothing about MCP session state. We decode each line
+// first, check whether the message is allowed in the current state, and only
+// then forward to the dispatcher.
+
+createFramer(process.stdin, async (line) => {
+  let msg;
+  try {
+    msg = decode(line);
+  } catch (err) {
+    // If the JSON is invalid, send a ParseError response.
+    await dispatcher.dispatch(line);
+    return;
+  }
+  if (msg.type === MessageType.Request) {
+    // Check if the request is allowed in the current session state.
+    // If not, send an error response and do not forward to the dispatcher.
+    if (!session.canAcceptRequests(msg.method)) {
+      const err = session.rejectionForRequest(msg.method);
+      const response = encodeError(msg.id, err.code, err.message);
+      // Send the error response to the client.
+      dispatcher.onOutput(response);
+      return;
+    }
+
+    if (msg.type === MessageType.Notification) {
+      if (!session.canAcceptNotification(msg.method)) {
+        // Notifications don't have an id, so we can't send a response.
+        // Just ignore it.
+        return;
+      }
+    }
+
+    await dispatcher.dispatch(line);
+  }
 });
 
-// Exit cleanly when stdin closes. The client signals it is done by closing
-// its end of the pipe (child.stdin.end()). Without this handler the process
-// would linger as a zombie.
+
 process.stdin.on('end', () => {
+  session.close();
   process.exit(0);
 });
 
-// ─── Handler ──────────────────────────────────────────────────────────────────
+// ─── MCP lifecycle handlers ───────────────────────────────────────────────────
 
-dispatcher.register('ping', async () => ({ reply: 'pong' }));
+dispatcher.register("initialize", async (params) => {
+  const version = negotiateProtocolVersion(params.protocolVersion);
 
-dispatcher.register('echo', async (params) => { 
-    
+  session.onInitializeRequest(params, version);
 
-    if(typeof params !== 'object' || params === null) {
-        throw { code: -32602, message: 'Invalid params: params must be an object' };
-    } 
-    if(!params.text || typeof params.text !== 'string') {
-        throw { code: -32602, message: 'Invalid params: params must have a text property of type string' };
-    }
+  return {
+    protocolVersion: version,
+    capabilities: SERVER_CAPABILITIES,
+    serverInfo: SERVER_INFO,
+  };
+});
 
-    return { reply: params.text };
-    
- });
+dispatcher.register("notifications/initialized", async () => {
+  session.onInitializedNotification();
+});
+
+// ─── Other  Handlers ──────────────────────────────────────────────────────────────────
+
+dispatcher.register("ping", async () => ({ reply: "pong" }));
+
+dispatcher.register("echo", async (params) => {
+  if (typeof params !== "object" || params === null) {
+    throw { code: -32602, message: "Invalid params: params must be an object" };
+  }
+  if (!params.text || typeof params.text !== "string") {
+    throw {
+      code: -32602,
+      message:
+        "Invalid params: params must have a text property of type string",
+    };
+  }
+
+  return { reply: params.text };
+});
