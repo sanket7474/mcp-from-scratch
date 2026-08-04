@@ -15,8 +15,8 @@
 //
 // More usefully, run it via the client: node src/client.js
 
-import { createFramer } from './framing.js';
-import { Dispatcher } from './dispatcher.js';
+import { createFramer } from './core/framing.js';
+import { Dispatcher } from './core/dispatcher.js';
 
 // ─── Transport wiring ─────────────────────────────────────────────────────────
 

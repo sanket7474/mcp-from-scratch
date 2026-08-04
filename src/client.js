@@ -7,12 +7,12 @@
 // Run with: node src/client.js
 
 import { spawn }        from 'child_process';
-import { createFramer } from './framing.js';
+import { createFramer } from './core/framing.js';
 import {
   encodeRequest,
   decode,
   MessageType,
-} from './jsonrpc.js';
+} from './core/jsonrpc.js';
 import { fileURLToPath } from "node:url";
 // ─── Spawn the server ─────────────────────────────────────────────────────────
 
