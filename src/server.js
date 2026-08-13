@@ -78,8 +78,7 @@ createFramer(process.stdin, async (line) => {
 
     await dispatcher.dispatch(line);
   
-  }
-});
+  });
 
 
 process.stdin.on('end', () => {

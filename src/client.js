@@ -8,7 +8,7 @@
 //
 // Run with: node src/client.js
 
-import { spawn }        from 'child_process';
+import { spawn } from 'child_process';
 import { createFramer } from './core/framing.js';
 import {
   encodeRequest,
@@ -74,7 +74,7 @@ createFramer(child.stdout, (line) => {
     return;
   }
 
-  if(msg.type === MessageType.Notification) {
+  if (msg.type === MessageType.Notification) {
     console.log('[client] received notification:', msg.method, msg.params);
   }
   // Server-sent notifications are covered in module 10.
@@ -130,54 +130,9 @@ async function handshake() {
   // 2. initialize request
   const initResult = await send('initialize', {
     protocolVersion: PROTOCOL_VERSION,
-    capabilities:    {},
+    capabilities: {},
     clientInfo: {
-      name:    'mcp-from-scratch-client',
-      version: '0.1.0',
-    },
-  });
-  session.onInitializeResultReceived(initResult);
-
-  console.log('\ninitialize →');
-  console.log('  protocolVersion:', initResult.protocolVersion);
-  console.log('  serverInfo:     ', initResult.serverInfo);
-  console.log('  capabilities:   ', JSON.stringify(initResult.capabilities));
-
-  // 3. notifications/initialized - client tells server we are ready.
-  try {
-  await notify('notifications/initialized', {});
-  } catch (err) {
-    console.error('notifications/initialized error:', err);
-  }
-  session.onInitializedNotificationSent();
-
-  console.log('\n[client] handshake complete, session state:', session.state);
-}
-
-function notify(method, params = {}) {
-  child.stdin.write(encodeNotification(method, params));
-}
-
-// ─── Handshake ────────────────────────────────────────────────────────────────
-
-async function handshake() {
-  console.log('[client] starting MCP handshake\n');
-
-  // 1. Request before initialize - server must reject it.
-  // We bypass client-side guards so the server is what rejects us.
-  try {
-    await sendUnchecked('echo', { message: 'too early' });
-    console.log('echo before init → unexpected success');
-  } catch (err) {
-    console.log('echo before init → rejected (expected):', err.message);
-  }
-
-  // 2. initialize request
-  const initResult = await send('initialize', {
-    protocolVersion: PROTOCOL_VERSION,
-    capabilities:    {},
-    clientInfo: {
-      name:    'mcp-from-scratch-client',
+      name: 'mcp-from-scratch-client',
       version: '0.1.0',
     },
   });
@@ -203,15 +158,7 @@ async function main() {
   console.log('\n--- requests after handshake ---\n');
 
 
-
   try {
-    const echoed = await send('echo', { message: 'hello after init' });
-    console.log('echo →', JSON.stringify(echoed));
-  } catch (err) {
-    console.error('echo error:', err);
-  }
-
-    try {
     const toolsList = await send('tools/list', {});
     console.log('tools/list →', JSON.stringify(toolsList));
   } catch (err) {
@@ -220,29 +167,10 @@ async function main() {
 
 
   try {
-    const pong = await send('ping');
-    console.log('ping →', pong);
-  } catch (err) {
-    console.error('ping error:', err);
-  }
-
-  try {
-    const echoed = await send('echo', { message: 'hello after init' });
+    const echoed = await send('echo', { message: 'hello world' });
     console.log('echo →', JSON.stringify(echoed));
   } catch (err) {
     console.error('echo error:', err);
-  }
-
-  // Second initialize should fail - handshake already completed.
-  try {
-    await sendUnchecked('initialize', {
-      protocolVersion: PROTOCOL_VERSION,
-      capabilities:    {},
-      clientInfo:      { name: 'again', version: '0.1.0' },
-    });
-    console.log('re-initialize → unexpected success');
-  } catch (err) {
-    console.log('re-initialize → rejected (expected):', err.message);
   }
 
   console.log('\n[client] done, closing connection');
@@ -252,5 +180,5 @@ async function main() {
 
 main().catch((err) => {
   console.error('[client] unhandled error:', err);
-  
+
 });
