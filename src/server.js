@@ -10,6 +10,7 @@
 import { createFramer } from "./core/framing.js";
 import { Dispatcher } from "./core/dispatcher.js";
 import { decode, encodeError, MessageType } from "./core/jsonrpc.js";
+import { ToolRegistry } from "./util/registry.js";
 
 // ─── Server identity (returned in initialize) ─────────────────────────────────
 
@@ -65,6 +66,7 @@ createFramer(process.stdin, async (line) => {
       dispatcher.onOutput(response);
       return;
     }
+  }
 
     if (msg.type === MessageType.Notification) {
       if (!session.canAcceptNotification(msg.method)) {
@@ -75,7 +77,7 @@ createFramer(process.stdin, async (line) => {
     }
 
     await dispatcher.dispatch(line);
-  }
+  
 });
 
 
@@ -83,6 +85,38 @@ process.stdin.on('end', () => {
   session.close();
   process.exit(0);
 });
+
+// ─── Tool registry ─────────────────────────────────────────────────────────────
+
+const resgistry = new ToolRegistry();
+
+resgistry.register({
+  name: "echo",
+  title: "Echo Tool",
+  description: "Simply return the message you send",
+
+  inputSchema: {
+    type: "object",
+    properties: {
+      message: { type: "string", description: "The message to echo back" },
+    },
+    required: ["message"]
+  }
+
+})
+
+
+resgistry.register({
+  name: "getTime",
+  title: "Get Time Tool",
+  description: "Return the current time",
+
+  inputSchema: {
+    type: "object",
+    additionalProperties: false
+  }
+
+})
 
 // ─── MCP lifecycle handlers ───────────────────────────────────────────────────
 
@@ -110,13 +144,21 @@ dispatcher.register("echo", async (params) => {
   if (typeof params !== "object" || params === null) {
     throw { code: -32602, message: "Invalid params: params must be an object" };
   }
-  if (!params.text || typeof params.text !== "string") {
+  if (!params.message || typeof params.message !== "string") {
     throw {
       code: -32602,
       message:
-        "Invalid params: params must have a text property of type string",
+        "Invalid params: params must have a message property of type string",
     };
   }
 
-  return { reply: params.text };
+  return { reply: params.message };
+});
+
+dispatcher.register("getTime", async () => {
+  return { time: new Date().toISOString() };
+});
+
+dispatcher.register("tools/list", async () => {
+  return { tools: resgistry.list() };
 });

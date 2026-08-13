@@ -109,7 +109,8 @@ function send(method, params = {}) {
 }
 
 function notify(method, params = {}) {
-  child.stdin.write(encodeNotification(method, params));
+  const req = encodeNotification(method, params);
+  child.stdin.write(req);
 }
 
 // ─── Handshake ────────────────────────────────────────────────────────────────
@@ -143,8 +144,12 @@ async function handshake() {
   console.log('  capabilities:   ', JSON.stringify(initResult.capabilities));
 
   // 3. notifications/initialized - client tells server we are ready.
-  notify('notifications/initialized', {});
-  session.onInitializedNotification();
+  try {
+  await notify('notifications/initialized', {});
+  } catch (err) {
+    console.error('notifications/initialized error:', err);
+  }
+  session.onInitializedNotificationSent();
 
   console.log('\n[client] handshake complete, session state:', session.state);
 }
@@ -156,12 +161,7 @@ async function main() {
 
   console.log('\n--- requests after handshake ---\n');
 
-  try {
-    const pong = await send('ping');
-    console.log('ping →', pong);
-  } catch (err) {
-    console.error('ping error:', err);
-  }
+
 
   try {
     const echoed = await send('echo', { message: 'hello after init' });
@@ -170,17 +170,13 @@ async function main() {
     console.error('echo error:', err);
   }
 
-  // Second initialize should fail - handshake already completed.
-  try {
-    await sendUnchecked('initialize', {
-      protocolVersion: PROTOCOL_VERSION,
-      capabilities:    {},
-      clientInfo:      { name: 'again', version: '0.1.0' },
-    });
-    console.log('re-initialize → unexpected success');
+    try {
+    const toolsList = await send('tools/list', {});
+    console.log('tools/list →', JSON.stringify(toolsList));
   } catch (err) {
-    console.log('re-initialize → rejected (expected):', err.message);
+    console.error('tools/list error:', err);
   }
+
 
   console.log('\n[client] done, closing connection');
   session.close();
