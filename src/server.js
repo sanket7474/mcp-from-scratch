@@ -78,6 +78,7 @@ createFramer(process.stdin, async (line) => {
 
     await dispatcher.dispatch(line);
   
+  }
 });
 
 
@@ -132,6 +133,20 @@ dispatcher.register("initialize", async (params) => {
   };
 });
 
+// ─── MCP lifecycle handlers ───────────────────────────────────────────────────
+
+dispatcher.register("initialize", async (params) => {
+  const version = negotiateProtocolVersion(params.protocolVersion);
+
+  session.onInitializeRequest(params, version);
+
+  return {
+    protocolVersion: version,
+    capabilities: SERVER_CAPABILITIES,
+    serverInfo: SERVER_INFO,
+  };
+});
+
 dispatcher.register("notifications/initialized", async () => {
   session.onInitializedNotification();
 });
@@ -161,4 +176,13 @@ dispatcher.register("getTime", async () => {
 
 dispatcher.register("tools/list", async () => {
   return { tools: resgistry.list() };
+  if (!params.text || typeof params.text !== "string") {
+    throw {
+      code: -32602,
+      message:
+        "Invalid params: params must have a text property of type string",
+    };
+  }
+
+  return { reply: params.text };
 });

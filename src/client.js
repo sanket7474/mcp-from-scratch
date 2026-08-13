@@ -154,6 +154,47 @@ async function handshake() {
   console.log('\n[client] handshake complete, session state:', session.state);
 }
 
+function notify(method, params = {}) {
+  child.stdin.write(encodeNotification(method, params));
+}
+
+// ─── Handshake ────────────────────────────────────────────────────────────────
+
+async function handshake() {
+  console.log('[client] starting MCP handshake\n');
+
+  // 1. Request before initialize - server must reject it.
+  // We bypass client-side guards so the server is what rejects us.
+  try {
+    await sendUnchecked('echo', { message: 'too early' });
+    console.log('echo before init → unexpected success');
+  } catch (err) {
+    console.log('echo before init → rejected (expected):', err.message);
+  }
+
+  // 2. initialize request
+  const initResult = await send('initialize', {
+    protocolVersion: PROTOCOL_VERSION,
+    capabilities:    {},
+    clientInfo: {
+      name:    'mcp-from-scratch-client',
+      version: '0.1.0',
+    },
+  });
+  session.onInitializeResultReceived(initResult);
+
+  console.log('\ninitialize →');
+  console.log('  protocolVersion:', initResult.protocolVersion);
+  console.log('  serverInfo:     ', initResult.serverInfo);
+  console.log('  capabilities:   ', JSON.stringify(initResult.capabilities));
+
+  // 3. notifications/initialized - client tells server we are ready.
+  notify('notifications/initialized', {});
+  session.onInitializedNotification();
+
+  console.log('\n[client] handshake complete, session state:', session.state);
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -177,6 +218,32 @@ async function main() {
     console.error('tools/list error:', err);
   }
 
+
+  try {
+    const pong = await send('ping');
+    console.log('ping →', pong);
+  } catch (err) {
+    console.error('ping error:', err);
+  }
+
+  try {
+    const echoed = await send('echo', { message: 'hello after init' });
+    console.log('echo →', JSON.stringify(echoed));
+  } catch (err) {
+    console.error('echo error:', err);
+  }
+
+  // Second initialize should fail - handshake already completed.
+  try {
+    await sendUnchecked('initialize', {
+      protocolVersion: PROTOCOL_VERSION,
+      capabilities:    {},
+      clientInfo:      { name: 'again', version: '0.1.0' },
+    });
+    console.log('re-initialize → unexpected success');
+  } catch (err) {
+    console.log('re-initialize → rejected (expected):', err.message);
+  }
 
   console.log('\n[client] done, closing connection');
   session.close();
