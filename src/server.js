@@ -36,6 +36,7 @@ const SERVER_CAPABILITIES = {
 
 const session = new Session("server");
 const dispatcher = new Dispatcher();
+const handlers = new Map(); // Maps request IDs to {resolve, reject} for pending requests.
 
 dispatcher.onOutput = (line) => {
   process.stdout.write(line);
@@ -68,17 +69,17 @@ createFramer(process.stdin, async (line) => {
     }
   }
 
-    if (msg.type === MessageType.Notification) {
-      if (!session.canAcceptNotification(msg.method)) {
-        // Notifications don't have an id, so we can't send a response.
-        // Just ignore it.
-        return;
-      }
+  if (msg.type === MessageType.Notification) {
+    if (!session.canAcceptNotification(msg.method)) {
+      // Notifications don't have an id, so we can't send a response.
+      // Just ignore it.
+      return;
     }
+  }
 
-    await dispatcher.dispatch(line);
-  
-  });
+  await dispatcher.dispatch(line);
+
+});
 
 
 process.stdin.on('end', () => {
@@ -88,36 +89,65 @@ process.stdin.on('end', () => {
 
 // ─── Tool registry ─────────────────────────────────────────────────────────────
 
-const resgistry = new ToolRegistry();
+const registry = new ToolRegistry();
 
-resgistry.register({
-  name: "echo",
-  title: "Echo Tool",
-  description: "Simply return the message you send",
 
-  inputSchema: {
-    type: "object",
-    properties: {
-      message: { type: "string", description: "The message to echo back" },
-    },
-    required: ["message"]
+function registerTool(defination, handler) {
+
+  registry.register(defination);
+
+  handlers.set(defination.name, handler)
+
+}
+
+
+registerTool(
+
+  {
+    name: "echo",
+    title: "Echo Tool",
+    description: "Simply return the message you send",
+
+    inputSchema: {
+      type: "object",
+      properties: {
+        message: { type: "string", description: "The message to echo back" },
+      },
+      required: ["message"]
+    }
   }
+  ,
+  (params) => {
+    if (typeof params !== "object" || params === null) {
+      throw { code: -32602, message: "Invalid params: params must be an object" };
+    }
+    if (!params.message || typeof params.message !== "string") {
+      throw {
+        code: -32602,
+        message:
+          "Invalid params: params must have a message property of type string",
+      };
+    }
 
-})
+    return textResult(params.message);
+  })
 
+registerTool(
+  {
+    name: "getTime",
+    title: "Get Time Tool",
+    description: "Return the current time",
 
-resgistry.register({
-  name: "getTime",
-  title: "Get Time Tool",
-  description: "Return the current time",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false
+    }
+  },
 
-  inputSchema: {
-    type: "object",
-    additionalProperties: false
+  () => {
+    return textResult(new Date().toISOString());
   }
-
-})
-
+)
 // ─── MCP lifecycle handlers ───────────────────────────────────────────────────
 
 dispatcher.register("initialize", async (params) => {
@@ -150,6 +180,50 @@ dispatcher.register("notifications/initialized", async () => {
   session.onInitializedNotification();
 });
 
+dispatcher.register("tools/call", async (params) => {
+  if (!params) {
+    throw { code: -32602, message: "Invalid params: params must be an object" };
+  }
+
+  if (!params.name || typeof params.name !== "string") {
+    throw { code: -32602, message: "Invalid params: params must have a name property of type string" };
+  }
+
+  const handler = handlers.get(params?.name)
+  const args = params?.arguments;
+
+  if (!handler) {
+    throw { code: -32602, message: `Invalid params: tool with name '${params.name}' not found` };
+  }
+
+  if (typeof args !== 'object' || Array.isArray(args)) {
+    throw { code: -32602, message: 'Invalid params: arguments must be an object' };
+  }
+
+  try {
+
+    const res = await handler(args);
+
+    if (!res?.content || !Array.isArray(res.content)) {
+      throw new Error(`Handler for "${name}" did not return a valid CallToolResult`);
+    }
+
+    return {
+      content: res.content,
+      isError: res.isError === true,
+    };
+
+  } catch (err) {
+    if (typeof err?.code === 'number') {
+      throw err;
+    }
+    const message = err?.message ?? 'Tool execution failed';
+    return textResult(message, true);
+  }
+
+
+})
+
 // ─── Other  Handlers ──────────────────────────────────────────────────────────────────
 
 dispatcher.register("ping", async () => ({ reply: "pong" }));
@@ -174,7 +248,7 @@ dispatcher.register("getTime", async () => {
 });
 
 dispatcher.register("tools/list", async () => {
-  return { tools: resgistry.list() };
+  return { tools: registry.list() };
   if (!params.text || typeof params.text !== "string") {
     throw {
       code: -32602,
@@ -185,3 +259,20 @@ dispatcher.register("tools/list", async () => {
 
   return { reply: params.text };
 });
+
+// ─── Tool result helper ───────────────────────────────────────────────────────
+//
+// MCP tool results are always shaped as { content: [...], isError?: boolean }.
+// This helper keeps handlers focused on the payload, not the wire format.
+
+/**
+ * @param {string} text
+ * @param {boolean} [isError]
+ * @returns {{ content: object[], isError: boolean }}
+ */
+function textResult(text, isError = false) {
+  return {
+    content: [{ type: 'text', text }],
+    isError,
+  };
+}

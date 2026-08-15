@@ -150,13 +150,34 @@ async function handshake() {
   console.log('\n[client] handshake complete, session state:', session.state);
 }
 
+
+// ─── Display tool results ─────────────────────────────────────────────────────
+
+function printCallResult(toolName, args, result) {
+  const blocks = result.content ?? [];
+  const isError = result.isError === true;
+
+  console.log(`  tools/call → ${toolName}`);
+  console.log(`    arguments: ${JSON.stringify(args)}`);
+  console.log(`    isError:   ${isError}`);
+
+  for (const block of blocks) {
+    if (block.type === 'text') {
+      console.log(`    text:      ${block.text}`);
+    } else {
+      console.log(`    content:   ${JSON.stringify(block)}`);
+    }
+  }
+  console.log();
+}
+
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
   await handshake();
 
   console.log('\n--- requests after handshake ---\n');
-
 
   try {
     const toolsList = await send('tools/list', {});
@@ -165,12 +186,20 @@ async function main() {
     console.error('tools/list error:', err);
   }
 
+   const calls = [
 
-  try {
-    const echoed = await send('echo', { message: 'hello world' });
-    console.log('echo →', JSON.stringify(echoed));
-  } catch (err) {
-    console.error('echo error:', err);
+    { name: 'echo',     arguments: { message: 'hello from MCP' } },
+    { name: 'getTime', arguments: {} },
+  ];
+
+  for (const params of calls) {
+    try {
+      const result = await send('tools/call', params);
+      printCallResult(params.name, params.arguments, result);
+    } catch (err) {
+      console.error(`  tools/call → ${params.name} failed:`, err.message ?? err);
+      console.log();
+    }
   }
 
   console.log('\n[client] done, closing connection');
