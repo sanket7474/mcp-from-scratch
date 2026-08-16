@@ -10,7 +10,7 @@
 import { createFramer } from "./core/framing.js";
 import { Dispatcher } from "./core/dispatcher.js";
 import { decode, encodeError, MessageType } from "./core/jsonrpc.js";
-import { ToolRegistry } from "./util/registry.js";
+import { ToolRegistry, ResourceRegistry } from "./util/registry.js";
 
 // ─── Server identity (returned in initialize) ─────────────────────────────────
 
@@ -25,7 +25,7 @@ import {
   Session,
   negotiateProtocolVersion,
   PROTOCOL_VERSION,
-} from './util/session.js';
+} from "./util/session.js";
 // server capabilities (returned in initialize). This is a static object for now,
 // but in a real server it could be dynamic, e.g. based on config or runtime state.
 const SERVER_CAPABILITIES = {
@@ -78,11 +78,9 @@ createFramer(process.stdin, async (line) => {
   }
 
   await dispatcher.dispatch(line);
-
 });
 
-
-process.stdin.on('end', () => {
+process.stdin.on("end", () => {
   session.close();
   process.exit(0);
 });
@@ -91,18 +89,13 @@ process.stdin.on('end', () => {
 
 const registry = new ToolRegistry();
 
-
 function registerTool(defination, handler) {
-
   registry.register(defination);
 
-  handlers.set(defination.name, handler)
-
+  handlers.set(defination.name, handler);
 }
 
-
 registerTool(
-
   {
     name: "echo",
     title: "Echo Tool",
@@ -113,13 +106,15 @@ registerTool(
       properties: {
         message: { type: "string", description: "The message to echo back" },
       },
-      required: ["message"]
-    }
-  }
-  ,
+      required: ["message"],
+    },
+  },
   (params) => {
     if (typeof params !== "object" || params === null) {
-      throw { code: -32602, message: "Invalid params: params must be an object" };
+      throw {
+        code: -32602,
+        message: "Invalid params: params must be an object",
+      };
     }
     if (!params.message || typeof params.message !== "string") {
       throw {
@@ -130,7 +125,8 @@ registerTool(
     }
 
     return textResult(params.message);
-  })
+  },
+);
 
 registerTool(
   {
@@ -140,14 +136,77 @@ registerTool(
 
     inputSchema: {
       type: "object",
-      additionalProperties: false
-    }
+      additionalProperties: false,
+    },
   },
 
   () => {
     return textResult(new Date().toISOString());
-  }
-)
+  },
+);
+
+const resourceRegistry = new ResourceRegistry();
+
+resourceRegistry.register(
+  {
+    uri: "demo://glossary",
+    name: "glossary",
+    title: "MCP glossary",
+    description: "Short definitions of core MCP concepts.",
+    mimeType: "text/plain",
+  },
+  () => ({
+    uri: "demo://glossary",
+    mimeType: "text/plain",
+    text: [
+      "Host     - Application that runs the AI and connects to MCP servers.",
+      "Client   - MCP connector inside the host; one per server connection.",
+      "Server   - Your code; exposes tools, resources, and prompts.",
+      "Tool     - Callable action (may have side effects).",
+      "Resource - Read-only data identified by URI.",
+    ].join("\n"),
+  }),
+);
+
+resourceRegistry.register(
+  {
+    uri: "demo://server-info",
+    name: "server-info",
+    title: "Server metadata",
+    description: "JSON snapshot of this teaching server.",
+    mimeType: "application/json",
+  },
+  () => ({
+    uri: "demo://server-info",
+    mimeType: "application/json",
+    text: JSON.stringify(
+      {
+        name: SERVER_INFO.name,
+        version: SERVER_INFO.version,
+        module: "08-resources",
+        time: new Date().toISOString(),
+      },
+      null,
+      2,
+    ),
+  }),
+);
+
+resourceRegistry.register(
+  {
+    uri: "demo://welcome",
+    name: "welcome",
+    title: "Welcome note",
+    description: "A short welcome message for the resources demo.",
+    mimeType: "text/markdown",
+  },
+  () => ({
+    uri: "demo://welcome",
+    mimeType: "text/markdown",
+    text: "# Welcome to MCP resources\n\nResources are **read-only**. Use `resources/list` to discover them and `resources/read` to fetch content.",
+  }),
+);
+
 // ─── MCP lifecycle handlers ───────────────────────────────────────────────────
 
 dispatcher.register("initialize", async (params) => {
@@ -186,43 +245,51 @@ dispatcher.register("tools/call", async (params) => {
   }
 
   if (!params.name || typeof params.name !== "string") {
-    throw { code: -32602, message: "Invalid params: params must have a name property of type string" };
+    throw {
+      code: -32602,
+      message:
+        "Invalid params: params must have a name property of type string",
+    };
   }
 
-  const handler = handlers.get(params?.name)
+  const handler = handlers.get(params?.name);
   const args = params?.arguments;
 
   if (!handler) {
-    throw { code: -32602, message: `Invalid params: tool with name '${params.name}' not found` };
+    throw {
+      code: -32602,
+      message: `Invalid params: tool with name '${params.name}' not found`,
+    };
   }
 
-  if (typeof args !== 'object' || Array.isArray(args)) {
-    throw { code: -32602, message: 'Invalid params: arguments must be an object' };
+  if (typeof args !== "object" || Array.isArray(args)) {
+    throw {
+      code: -32602,
+      message: "Invalid params: arguments must be an object",
+    };
   }
 
   try {
-
     const res = await handler(args);
 
     if (!res?.content || !Array.isArray(res.content)) {
-      throw new Error(`Handler for "${name}" did not return a valid CallToolResult`);
+      throw new Error(
+        `Handler for "${name}" did not return a valid CallToolResult`,
+      );
     }
 
     return {
       content: res.content,
       isError: res.isError === true,
     };
-
   } catch (err) {
-    if (typeof err?.code === 'number') {
+    if (typeof err?.code === "number") {
       throw err;
     }
-    const message = err?.message ?? 'Tool execution failed';
+    const message = err?.message ?? "Tool execution failed";
     return textResult(message, true);
   }
-
-
-})
+});
 
 // ─── Other  Handlers ──────────────────────────────────────────────────────────────────
 
@@ -260,6 +327,10 @@ dispatcher.register("tools/list", async () => {
   return { reply: params.text };
 });
 
+dispatcher.register('resources/list', async (_params) => {
+  return { resources: resourceRegistry.list() };
+});
+
 // ─── Tool result helper ───────────────────────────────────────────────────────
 //
 // MCP tool results are always shaped as { content: [...], isError?: boolean }.
@@ -272,7 +343,7 @@ dispatcher.register("tools/list", async () => {
  */
 function textResult(text, isError = false) {
   return {
-    content: [{ type: 'text', text }],
+    content: [{ type: "text", text }],
     isError,
   };
 }

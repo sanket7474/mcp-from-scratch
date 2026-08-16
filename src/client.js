@@ -171,6 +171,50 @@ function printCallResult(toolName, args, result) {
   console.log();
 }
 
+function previewText(text, maxLen = 120) {
+  const oneLine = text.replace(/\s+/g, ' ').trim();
+  if (oneLine.length <= maxLen) return oneLine;
+  return `${oneLine.slice(0, maxLen)}…`;
+}
+
+function printReadResult(label, result) {
+  const contents = result.contents ?? [];
+
+  console.log(`  ${label}`);
+  for (const block of contents) {
+    console.log(`    uri:      ${block.uri}`);
+    if (block.mimeType) {
+      console.log(`    mimeType: ${block.mimeType}`);
+    }
+    if (typeof block.text === 'string') {
+      console.log(`    text:     ${previewText(block.text)}`);
+    } else if (typeof block.blob === 'string') {
+      console.log(`    blob:     (${block.blob.length} base64 chars)`);
+    }
+  }
+  console.log();
+}
+
+function printResources(result) {
+  const resources = result.resources ?? [];
+
+  console.log(`\n[client] resources/list → ${resources.length} resource(s)\n`);
+
+  for (const resource of resources) {
+    console.log(`  • ${resource.uri}`);
+    console.log(`    name:        ${resource.name}`);
+    if (resource.title) {
+      console.log(`    title:       ${resource.title}`);
+    }
+    if (resource.description) {
+      console.log(`    description: ${resource.description}`);
+    }
+    if (resource.mimeType) {
+      console.log(`    mimeType:    ${resource.mimeType}`);
+    }
+    console.log();
+  }
+}
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
@@ -201,6 +245,17 @@ async function main() {
       console.log();
     }
   }
+
+  console.log("------------------------ Resources --------------------------------");
+
+  try {
+
+    const resources = await send('resources/list', {});
+    printResources(resources);
+  } catch(err) {
+    console.log('resource/list error: ', err)
+  }
+
 
   console.log('\n[client] done, closing connection');
   session.close();
